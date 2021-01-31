@@ -15,12 +15,27 @@ def get_class_names(source_file=fl.CLASS_LIST):
     return workbook.sheetnames
 
 
-def create_class_register_as_excel(class_name, class_list_file):
-    template = op.load_workbook(fl.EXCEL_TEMPLATE)
-    template_sheet = template.active
+def add_date_to_a_work_sheet(sheet, date):
+    sheet.title = date.strftime(ef.DATE_FORMAT)
+    sheet[ef.CELL_FOR_DATE] = sheet.title
 
-    class_list_wb = op.load_workbook(class_list_file)
-    class_list_sheet = class_list_wb[class_name]
+
+def add_list_of_learners_to_a_work_sheet(destination_sheet, source_sheet):
+    row_start = ef.CLASS_LIST_STARTS_AT_ROW
+    row_end = ef.CLASS_LIST_ENDS_AT_ROW
+    for row in range(row_start, row_end + 1):
+        if source_sheet[f"{ef.NUMBER_COLUMN}{row - row_start + 1}"].value:
+            destination_sheet[f"{ef.NUMBER_COLUMN}{row}"].value = \
+                source_sheet[f"{ef.NUMBER_COLUMN}{row - row_start + 1}"].value
+
+            destination_sheet[f"{ef.NAME_COLUMN}{row}"].value = \
+                source_sheet[f"{ef.SURNAME_COLUMN}{row - row_start + 1}"].value \
+                + " " \
+                + source_sheet[f"{ef.NAME_COLUMN}{row - row_start + 1}"].value
+
+
+def set_new_work_sheet_for_each_day(template, class_list_sheet):
+    template_sheet = template.active
 
     for day in rrule.rrule(freq=rrule.DAILY,
                            dtstart=dates.START_DATE,
@@ -28,17 +43,26 @@ def create_class_register_as_excel(class_name, class_list_file):
                            byweekday=[rrule.MO, rrule.TU, rrule.WE, rrule.TH, rrule.FR]):
         if day not in holidays.HOLIDAYS_AS_DATE:
             sheet = template.copy_worksheet(template_sheet)
-            sheet.title = day.strftime("%Y-%m-%d")
-            sheet['A1'] = sheet.title
+            add_date_to_a_work_sheet(sheet, day)
+            add_list_of_learners_to_a_work_sheet(destination_sheet=sheet, source_sheet=class_list_sheet)
 
-            row_start = ef.CLASS_LIST_STARTS_AT_ROW
-            row_end = ef.CLASS_LIST_ENDS_AT_ROW
-            for row in range(row_start, row_end + 1):
-                if class_list_sheet[f"A{row-row_start + 1}"].value:
-                    sheet[f"A{row}"].value = class_list_sheet[f"A{row-row_start + 1}"].value
-                    sheet[f"B{row}"].value = class_list_sheet[f"C{row-row_start + 1}"].value \
-                                             + " " \
-                                             + class_list_sheet[f"B{row-row_start + 1}"].value
+
+def create_class_register_as_excel(class_name, class_list_file):
+    template = op.load_workbook(fl.EXCEL_TEMPLATE)
+
+    class_list_wb = op.load_workbook(class_list_file)
+    class_list_sheet = class_list_wb[class_name]
+
+    set_new_work_sheet_for_each_day(template, class_list_sheet)
+    # for day in rrule.rrule(freq=rrule.DAILY,
+    #                        dtstart=dates.START_DATE,
+    #                        until=dates.END_DATE,
+    #                        byweekday=[rrule.MO, rrule.TU, rrule.WE, rrule.TH, rrule.FR]):
+    #     if day not in holidays.HOLIDAYS_AS_DATE:
+    #         sheet = template.copy_worksheet(template_sheet)
+    #         add_date_to_a_work_sheet(sheet, day)
+    #
+    #         add_list_of_learners_to_a_work_sheet(destination_sheet=sheet, source_sheet=class_list_sheet)
 
     template.save(fl.OUTPUT_FOLDER_FOR_EXCEL_FILES / f"{class_name}.xlsx")
 
@@ -49,28 +73,43 @@ def get_pdf_file_name_from_excel_file_name(file_name, destination_folder):
     return str(pdf_file)
 
 
+def get_workbook(application, file_name):
+    return application.Workbooks.Open(file_name)
+
+
+def adjust_print_area(workbook):
+    for work_sheet in workbook.Sheets:
+        work_sheet.PageSetup.Zoom = False
+        work_sheet.PageSetup.FitToPagesTall = 1
+        work_sheet.PageSetup.FitToPagesWide = 1
+        work_sheet.PageSetup.PrintArea = ef.PRINT_AREA
+
+
+def select_worksheets_to_convert(workbook):
+    last_worksheet_index = workbook.Sheets.count
+    work_sheet_index_list = list(range(2, last_worksheet_index + 1))
+    workbook.WorkSheets(work_sheet_index_list).Select()
+
+
+def convert_workbook_to_pdf(workbook, file_name, destination_folder=fl.OUTPUT_FOLDER_FOR_PDF_FILES):
+    pdf_file_name = get_pdf_file_name_from_excel_file_name(file_name, destination_folder)
+    workbook.ActiveSheet.ExportAsFixedFormat(0, pdf_file_name)
+
+
 def convert_excel_file_to_pdf(file_name, destination_folder=fl.OUTPUT_FOLDER_FOR_PDF_FILES):
     application = win32com.client.Dispatch('Excel.Application')
     application.Visible = False
 
-    workbook = application.Workbooks.Open(file_name)
+    workbook = get_workbook(application, file_name)
 
-    last_worksheet_index = workbook.Sheets.count
+    adjust_print_area(workbook)
 
-    for work_sheet in workbook.Sheets:
-        if work_sheet != 'Sheet1':
-            work_sheet.PageSetup.Zoom = False
-            work_sheet.PageSetup.FitToPagesTall = 1
-            work_sheet.PageSetup.FitToPagesWide = 1
-            work_sheet.PageSetup.PrintArea = ef.PRINT_AREA
+    select_worksheets_to_convert(workbook)
 
-    work_sheet_index_list = list(range(2, last_worksheet_index + 1))
-    workbook.WorkSheets(work_sheet_index_list).Select()
-    pdf_file_name = get_pdf_file_name_from_excel_file_name(file_name, destination_folder)
-    print(f'Destination folder: {pdf_file_name}')
-    workbook.ActiveSheet.ExportAsFixedFormat(0, pdf_file_name)
+    convert_workbook_to_pdf(workbook, file_name, destination_folder)
 
     workbook.Close(True)
+
     application.Quit()
 
 
@@ -79,7 +118,6 @@ def convert_excel_files_in_a_directory_to_pdf(source_folder=fl.OUTPUT_FOLDER_FOR
     excel_files = Path(source_folder).resolve().glob('**/*.xlsx')
     for file in excel_files:
         file_name_as_string = str(file)
-        print(f'Converting {file_name_as_string}...')
         convert_excel_file_to_pdf(file_name_as_string, destination_folder)
 
 
