@@ -1,0 +1,6 @@
+et-xmlfile==1.0.1
+jdcal==1.4.1
+openpyxl==3.0.6
+python-dateutil==2.8.1
+pywin32==300
+six==1.15.0
